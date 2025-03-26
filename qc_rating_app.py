@@ -332,7 +332,6 @@ def app():
     sidebar = pn.Column(
         metrics_pane,
         pn.layout.Divider(margin=(20, 0, 15, 0)),
-        pn.pane.Markdown("""**Does the unit's activity drift in or out?**"""),
         no_button,
         yes_button,
         unsure_button,
