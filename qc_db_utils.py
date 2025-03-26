@@ -172,6 +172,8 @@ def get_db(
         logger.info(
             f"Filtering qc df with {' & '.join([str(f) for f in filter_exprs])}"
         )
+    if not filter_exprs:
+        filter_exprs = [pl.lit(True)]
     return pl.read_parquet(db_path).filter(*filter_exprs)
 
 
