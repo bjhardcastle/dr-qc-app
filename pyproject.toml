@@ -1,0 +1,13 @@
+[project]
+name = "dr-qc-app"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "altair>=5.5.0",
+    "ipykernel>=6.29.5",
+    "npc-io>=0.1.32",
+    "panel>=1.6.1",
+    "polars>=1.26.0",
+]
