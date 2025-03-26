@@ -28,7 +28,6 @@ if not upath.UPath(qc_db_utils.DB_PATH).exists():
 
 db_df: pl.DataFrame = qc_db_utils.get_db()
 
-
 def get_metrics(qc_path: str):
     return (
         qc_db_utils.get_db()
@@ -74,11 +73,7 @@ def display_rating(
 
 
 def display_item(qc_path: str):
-    filtered_df = qc_db_utils.get_db().filter(pl.col("qc_path") == qc_path)
-    assert len(filtered_df) == 1, "df filtering likely incorrect"
-    path = filtered_df["qc_path"].first()
-    path = upath.UPath(path)
-    assert path is not None, f"Path not stored for {path}"
+    path = upath.UPath(qc_path)
     logger.info(f"Displaying {path}")
     if path.suffix == '.png': 
         return pn.pane.PNG(
@@ -87,7 +82,7 @@ def display_item(qc_path: str):
         )
     if path.suffix == '.json':
         return pn.pane.JSON(
-            json.loads(path.read_text()),
+            json.loads(path.read_bytes()),
             sizing_mode="stretch_height",
         )
     if path.suffix in ('.txt', '.error'):
@@ -132,6 +127,7 @@ def next_path(override_next_path: str | None = None) -> None:
             current_qc_path = next(qc_path_generator)
         except StopIteration:
             pn.state.notifications.warning("No matching paths")
+    global qc_item_pane
     qc_item_pane.object = display_item(current_qc_path).object
     metrics_pane.object = display_metrics(current_qc_path).object
     qc_rating_pane.object = display_rating(current_qc_path).object
@@ -288,7 +284,7 @@ def update_path_generator(event) -> None:
             plot_name_filter_dropdown.value.split('/')[-1]
             if plot_name_filter_dropdown.value 
             else None
-            ),        
+        ),        
     )
     print(path_generator_params)
     if qc_rating_filter_radio.value == "unrated":
@@ -308,14 +304,19 @@ def update_path_generator(event) -> None:
 plot_name_filter_dropdown = pn.widgets.Select(
     name="Plot name",
     value="",
-    options=db_df.with_columns(pl.concat_str([pl.col('qc_group'), pl.col('plot_name')], separator='/').alias('name'))["name"].unique().sort().to_list() + [""],
+    options=(
+        db_df
+        .select(pl.concat_str(['qc_group', 'plot_name'], separator='/').alias('name'))
+        .get_column('name').unique().sort(descending=True)
+        .to_list() + [""]
+    ),
 )
 plot_name_filter_dropdown.param.watch(update_path_generator, "value")
 
 session_id_filter_dropdown = pn.widgets.Select(
     name="Session ID",
     value="",
-    options=db_df["session_id"].unique().sort(descending=True).to_list() + [""],
+    options=db_df["session_id"].unique().sort(descending=False).to_list() + [""],
     width=BUTTON_WIDTH,
 )
 session_id_filter_dropdown.param.watch(update_path_generator, "value")
