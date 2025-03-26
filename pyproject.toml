@@ -10,4 +10,5 @@ dependencies = [
     "npc-io>=0.1.32",
     "panel>=1.6.1",
     "polars>=1.26.0",
+    "pyarrow>=19.0.1",
 ]

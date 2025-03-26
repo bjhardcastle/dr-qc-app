@@ -4,6 +4,8 @@ import logging
 import time
 from typing import NotRequired, TypedDict
 
+
+import altair as alt
 import npc_io
 import panel as pn
 import param
@@ -272,6 +274,36 @@ def handle_shortcut(event):
 
 shortcuts_component.on_msg(handle_shortcut)
 
+
+chart = (
+    alt.Chart(
+        data=(
+            db_df
+            .group_by('plot_name', 'qc_group')
+            .agg(
+                pl.col('qc_rating').value_counts(),
+            )
+            .explode('qc_rating')
+            .unnest('qc_rating')
+            .sort('qc_group')
+            .with_columns(
+                pl.col('qc_rating').replace_strict([0, 1, 5, None] , ['fail', 'pass', 'unsure', 'not rated'])
+            )
+            .with_columns(pl.concat_str(['qc_group', 'plot_name'], separator='/').alias('name'))
+        ).to_pandas()
+    )
+    .mark_bar()
+    .encode(
+        x='name:N',
+        # xOffset='plot_name',
+        y='count:Q',
+        color='qc_rating:N',
+        tooltip=['plot_name', 'qc_group', 'qc_rating', 'count']
+    )
+    .properties(
+        width=1200,
+    )
+)
 # - ---------------------------------------------------------------- #
 
 
@@ -350,7 +382,7 @@ def app():
         site="DR dashboard",
         title="experiment QC",
         sidebar=[sidebar],
-        main=[qc_item_pane],
+        main=pn.Column(qc_item_pane, chart),
         sidebar_width=SIDEBAR_WIDTH,
     )
 
