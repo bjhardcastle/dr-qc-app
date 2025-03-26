@@ -11,7 +11,7 @@ import polars as pl
 import upath
 import panel.custom 
 
-import db_utils
+import qc_db_utils
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  #! doesn't take effect
@@ -23,19 +23,19 @@ pn.config.notifications = True
 SIDEBAR_WIDTH = 280
 BUTTON_WIDTH = int(SIDEBAR_WIDTH * 0.8)
 
-if not upath.UPath(db_utils.DB_PATH).exists():
-    db_utils.create_db()
+if not upath.UPath(qc_db_utils.DB_PATH).exists():
+    qc_db_utils.create_db()
 
-db_df: pl.DataFrame = db_utils.get_db()
+db_df: pl.DataFrame = qc_db_utils.get_db()
 
 
 def get_metrics(qc_path: str):
     return (
-        db_utils.get_db()
+        qc_db_utils.get_db()
         .filter(pl.col("qc_path") == qc_path)
         .select('session_id', 'qc_group', 'plot_name', 'plot_index')
         .join(
-            other=db_utils.get_session_df(),
+            other=qc_db_utils.get_session_df(),
             on="session_id",
             how="left",
         )
@@ -61,7 +61,7 @@ def display_metrics(
 def display_rating(
     path=str,
 ) -> pn.pane.Markdown:
-    df = db_utils.get_db().filter(pl.col('qc_path')==path)
+    df = qc_db_utils.get_db().filter(pl.col('qc_path')==path)
     assert len(df) == 1, f"Expected 1 row, got {len(df)}"
     row = df.to_dicts()[0]
     rating: int | None = row["qc_rating"]
@@ -69,12 +69,12 @@ def display_rating(
         return pn.pane.Markdown("not yet rated")
     else:
         return pn.pane.Markdown(
-            f"**{db_utils.QCRating(rating).name.title()}** ({datetime.datetime.fromtimestamp(row['checked_timestamp']).strftime('%Y-%m-%d %H:%M:%S')})"
+            f"**{qc_db_utils.QCRating(rating).name.title()}** ({datetime.datetime.fromtimestamp(row['checked_timestamp']).strftime('%Y-%m-%d %H:%M:%S')})"
         )
 
 
 def display_item(qc_path: str):
-    filtered_df = db_utils.get_db().filter(pl.col("qc_path") == qc_path)
+    filtered_df = qc_db_utils.get_db().filter(pl.col("qc_path") == qc_path)
     assert len(filtered_df) == 1, "df filtering likely incorrect"
     path = filtered_df["qc_path"].first()
     path = upath.UPath(path)
@@ -110,7 +110,7 @@ def display_item(qc_path: str):
         
 
 # initialize for startup, then update as a global variable
-qc_path_generator = db_utils.qc_item_generator(
+qc_path_generator = qc_db_utils.qc_item_generator(
     already_checked=False,
 )
 current_qc_path = next(qc_path_generator)
@@ -138,32 +138,32 @@ def next_path(override_next_path: str | None = None) -> None:
 
 
 def update_and_next(path: str, qc_rating: int) -> None:
-    db_utils.set_qc_rating_for_path(path=path, qc_rating=qc_rating)
+    qc_db_utils.set_qc_rating_for_path(path=path, qc_rating=qc_rating)
     next_path()
 
 
 # make three buttons for rating qc item
 no_button_text = (
-    f"{db_utils.QCRating.FAIL.name.title()} [{db_utils.QCRating.FAIL.value}]"
+    f"{qc_db_utils.QCRating.FAIL.name.title()} [{qc_db_utils.QCRating.FAIL.value}]"
 )
 no_button = pn.widgets.Button(name=no_button_text, width=BUTTON_WIDTH)
 no_button.on_click(
     lambda event: update_and_next(
-        path=current_qc_path, qc_rating=db_utils.QCRating.FAIL
+        path=current_qc_path, qc_rating=qc_db_utils.QCRating.FAIL
     )
 )
-yes_button_text = f"{db_utils.QCRating.PASS.name.title()} [{db_utils.QCRating.PASS.value}]"
+yes_button_text = f"{qc_db_utils.QCRating.PASS.name.title()} [{qc_db_utils.QCRating.PASS.value}]"
 yes_button = pn.widgets.Button(name=yes_button_text, width=BUTTON_WIDTH)
 yes_button.on_click(
     lambda event: update_and_next(
-        path=current_qc_path, qc_rating=db_utils.QCRating.PASS
+        path=current_qc_path, qc_rating=qc_db_utils.QCRating.PASS
     )
 )
-unsure_button_text = f"{db_utils.QCRating.UNSURE.name.title()} [{db_utils.QCRating.UNSURE.value}]"
+unsure_button_text = f"{qc_db_utils.QCRating.UNSURE.name.title()} [{qc_db_utils.QCRating.UNSURE.value}]"
 unsure_button = pn.widgets.Button(name=unsure_button_text, width=BUTTON_WIDTH)
 unsure_button.on_click(
     lambda event: update_and_next(
-        path=current_qc_path, qc_rating=db_utils.QCRating.UNSURE
+        path=current_qc_path, qc_rating=qc_db_utils.QCRating.UNSURE
     )
 )
 skip_button = pn.widgets.Button(name="Skip [s]", width=BUTTON_WIDTH)
@@ -258,7 +258,7 @@ shortcuts = [
     KeyboardShortcut(name="previous", key="p", ctrlKey=False),
 ] + [
     KeyboardShortcut(name=k, key=str(v), ctrlKey=False)
-    for k, v in db_utils.QCRating.__members__.items()
+    for k, v in qc_db_utils.QCRating.__members__.items()
 ]
 shortcuts_component = KeyboardShortcuts(shortcuts=shortcuts)
 
@@ -270,7 +270,7 @@ def handle_shortcut(event):
         next_path(override_next_path=previous_qc_path)
     else:
         update_and_next(
-            path=current_qc_path, qc_rating=db_utils.QCRating[event.data]
+            path=current_qc_path, qc_rating=qc_db_utils.QCRating[event.data]
         )
 
 
@@ -298,11 +298,11 @@ def update_path_generator(event) -> None:
         path_generator_params["already_checked"] = None
         path_generator_params["qc_rating_filter"] = None
     else:
-        path_generator_params["qc_rating_filter"] = db_utils.QCRating[
+        path_generator_params["qc_rating_filter"] = qc_db_utils.QCRating[
             qc_rating_filter_radio.value.upper()
         ].value
     logger.info(f"Updating path generator with {path_generator_params}")
-    qc_path_generator = db_utils.qc_item_generator(**path_generator_params)
+    qc_path_generator = qc_db_utils.qc_item_generator(**path_generator_params)
     next_path()
 
 plot_name_filter_dropdown = pn.widgets.Select(
@@ -321,7 +321,7 @@ session_id_filter_dropdown = pn.widgets.Select(
 session_id_filter_dropdown.param.watch(update_path_generator, "value")
 qc_rating_filter_radio = pn.widgets.RadioBoxGroup(
     name="Show rated items",
-    options=["all", "unrated"] + [k.lower() for k in db_utils.QCRating.__members__],
+    options=["all", "unrated"] + [k.lower() for k in qc_db_utils.QCRating.__members__],
     inline=False,
     value="unrated",
 )
