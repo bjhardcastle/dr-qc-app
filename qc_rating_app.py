@@ -295,8 +295,7 @@ chart = (
     .mark_bar()
     .encode(
         x='name:N',
-        # xOffset='plot_name',
-        y='count:Q',
+        y=alt.Y('count').scale(type="symlog"),
         color='qc_rating:N',
         tooltip=['plot_name', 'qc_group', 'qc_rating', 'count']
     )
