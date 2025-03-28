@@ -287,17 +287,18 @@ chart = (
             .unnest('qc_rating')
             .sort('qc_group')
             .with_columns(
-                pl.col('qc_rating').replace_strict([0, 1, 5, None] , ['fail', 'pass', 'unsure', 'not rated'])
+                pl.col('qc_rating').replace_strict({0: 'fail', 1: 'pass', 5: 'unsure'}, default='not rated').alias('rating'),
             )
-            .with_columns(pl.concat_str(['qc_group', 'plot_name'], separator='/').alias('name'))
+            .with_columns(pl.concat_str(['qc_group', 'plot_name'], separator='/').alias('qc_item'))
         ).to_pandas()
     )
     .mark_bar()
     .encode(
-        x='name:N',
+        x='qc_item:N',
+        xOffset=alt.XOffset('qc_rating:N'),
         y=alt.Y('count').scale(type="symlog"),
-        color='qc_rating:N',
-        tooltip=['plot_name', 'qc_group', 'qc_rating', 'count']
+        color=alt.Color('rating:N').scale(domain=['fail', 'pass', 'unsure', 'not rated'], range=['red', 'green', 'orange', 'grey']),
+        tooltip=['plot_name', 'qc_group', 'rating', 'count'],
     )
     .properties(
         width=1200,
