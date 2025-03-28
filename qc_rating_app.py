@@ -297,7 +297,7 @@ chart = (
         x='qc_item:N',
         xOffset=alt.XOffset('qc_rating:N'),
         y=alt.Y('count').scale(type="symlog"),
-        color=alt.Color('rating:N').scale(domain=['fail', 'pass', 'unsure', 'not rated'], range=['red', 'green', 'orange', 'grey']),
+        color=alt.Color('rating:N').scale(domain=['fail', 'pass', 'unsure', 'not rated'], range=['red', 'green', 'orange', 'lightgrey']),
         tooltip=['plot_name', 'qc_group', 'rating', 'count'],
     )
     .properties(
