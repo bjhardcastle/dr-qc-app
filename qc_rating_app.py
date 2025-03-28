@@ -308,12 +308,14 @@ chart = (
 
 def update_path_generator(event) -> None:
     global qc_path_generator
+    def handle_no_filter(v):
+        return v if v != "no filter" else None
     path_generator_params = dict(
-        qc_rating_filter=qc_rating_filter_radio.value or None,
-        session_id_filter=session_id_filter_dropdown.value or None,
+        qc_rating_filter=qc_rating_filter_radio.value,
+        session_id_filter=handle_no_filter(session_id_filter_dropdown.value),
         plot_name_filter=(
-            plot_name_filter_dropdown.value.split('/')[-1]
-            if plot_name_filter_dropdown.value 
+            handle_no_filter(plot_name_filter_dropdown.value).split('/')[-1]
+            if handle_no_filter(plot_name_filter_dropdown.value) is not None
             else None
         ),        
     )
@@ -334,20 +336,20 @@ def update_path_generator(event) -> None:
 
 plot_name_filter_dropdown = pn.widgets.Select(
     name="Plot name",
-    value="",
+    value="no filter",
     options=(
         db_df
         .select(pl.concat_str(['qc_group', 'plot_name'], separator='/').alias('name'))
         .get_column('name').unique().sort(descending=True)
-        .to_list() + [""]
+        .to_list() + ["no filter"]
     ),
 )
 plot_name_filter_dropdown.param.watch(update_path_generator, "value")
 
 session_id_filter_dropdown = pn.widgets.Select(
     name="Session ID",
-    value="",
-    options=db_df["session_id"].unique().sort(descending=False).to_list() + [""],
+    value="no filter",
+    options=db_df["session_id"].unique().sort(descending=False).to_list() + ["no filter"],
     width=BUTTON_WIDTH,
 )
 session_id_filter_dropdown.param.watch(update_path_generator, "value")
