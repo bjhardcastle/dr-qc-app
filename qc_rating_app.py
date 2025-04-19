@@ -366,6 +366,19 @@ qc_rating_filter_radio = pn.widgets.RadioBoxGroup(
 )
 qc_rating_filter_radio.param.watch(update_path_generator, "value")
 
+# button to apply current session ID to filter
+def apply_session_id_filter(event) -> None:
+    plot_name_filter_dropdown.value = 'no filter'
+    session_id_filter_dropdown.value = get_metrics(current_qc_path)
+    qc_rating_filter_radio.value = 'all'
+    update_path_generator(event)
+    
+session_id_filter_button = pn.widgets.Button(
+    name="All plots for current session",
+    width=BUTTON_WIDTH,
+)
+session_id_filter_button.on_click(apply_session_id_filter)
+    
 def app():
     sidebar = pn.Column(
         metrics_pane,
@@ -382,6 +395,7 @@ def app():
         plot_name_filter_dropdown,
         qc_rating_filter_radio,
         session_id_filter_dropdown,
+        session_id_filter_button,
     )
 
     return pn.template.MaterialTemplate(
