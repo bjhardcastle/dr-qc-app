@@ -51,13 +51,13 @@ def display_metrics(
     metrics = get_metrics(path)
     stats = f"""
 
-### `{path}`
+`{path}`
 """
     for k, v in metrics.items():
         if isinstance(v, float):
             v = f"{v:.2f}"
         stats += f"\n{k.replace('_', ' ')}:\n`{v if v else '-'}`\n"
-    return pn.pane.Markdown(stats)
+    return pn.pane.Markdown(stats, width=SIDEBAR_WIDTH)
 
 
 def display_rating(
