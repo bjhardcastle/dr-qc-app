@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import re
 import time
 from typing import NotRequired, TypedDict
 
@@ -311,6 +312,8 @@ def update_path_generator(event) -> None:
     global qc_path_generator
     def handle_no_filter(v):
         return v if v != "no filter" else None
+    probe_filter = re.search(r"probe[A-F]", plot_name_filter_dropdown.value)
+    print(probe_filter)
     path_generator_params = dict(
         qc_rating_filter=qc_rating_filter_radio.value,
         session_id_filter=handle_no_filter(session_id_filter_dropdown.value),
@@ -318,7 +321,8 @@ def update_path_generator(event) -> None:
             handle_no_filter(plot_name_filter_dropdown.value).split('/')[-1]
             if handle_no_filter(plot_name_filter_dropdown.value) is not None
             else None
-        ),        
+        ),
+        probe_filter=probe_filter[0] if probe_filter else None,
     )
     print(path_generator_params)
     if qc_rating_filter_radio.value == "unrated":

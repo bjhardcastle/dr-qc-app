@@ -140,6 +140,7 @@ def reset_db(src_path: str, dest_path: str) -> None:
 
 def get_db(
     path_filter: str | None = None,
+    probe_filter: str | None = None,
     already_checked: bool | None = None,
     qc_group_filter: str | None = None,
     plot_name_filter: str | None = None,
@@ -152,6 +153,11 @@ def get_db(
     filter_exprs = []
     if path_filter:
         filter_exprs.append(pl.col("qc_path").str.contains(path_filter))
+    if probe_filter:
+        probe_letter = probe_filter.lower().replace('probe', '').replace('_', '').upper()
+        if probe_letter not in 'ABCDEF':
+            raise ValueError(f"Invalid probe filter: {probe_filter}")
+        filter_exprs.append(pl.col("qc_path").str.contains(f"probe{probe_letter}"))
     if already_checked is True and qc_rating_filter is None:
         filter_exprs.append(pl.col("qc_rating").is_not_null())
     elif already_checked is False and qc_rating_filter is None:
@@ -179,6 +185,7 @@ def get_db(
 
 def qc_item_generator(
     path_filter: str | None = None,
+    probe_filter: str | None = None,
     already_checked: bool | None = None,
     qc_group_filter: str | None = None,
     plot_name_filter: str | None = None,
@@ -191,6 +198,7 @@ def qc_item_generator(
     while True:
         df = get_db(
             path_filter=path_filter,
+            probe_filter=probe_filter,
             already_checked=already_checked,
             qc_group_filter=qc_group_filter,
             plot_name_filter=plot_name_filter,
