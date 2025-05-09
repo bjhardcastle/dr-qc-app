@@ -3,7 +3,7 @@ import json
 import logging
 import re
 import time
-from typing import NotRequired, TypedDict
+from typing import Generator, NotRequired, TypedDict
 
 
 import altair as alt
@@ -366,19 +366,47 @@ qc_rating_filter_radio = pn.widgets.RadioBoxGroup(
 )
 qc_rating_filter_radio.param.watch(update_path_generator, "value")
 
-# button to apply current session ID to filter
+# toggle to switch between filter on current session ID and all session IDs/previous QC plot
+def toggle_session_id_filter_generator() -> Generator:
+    # save state of current UI elements so we can restore them later
+    original_plot_name = plot_name_filter_dropdown.value
+    original_qc_rating = qc_rating_filter_radio.value
+    original_qc_path_generator = qc_path_generator
+    yield
+    # restore state of UI elements
+    yield original_plot_name, original_qc_rating
+
+toggle_generator = None
 def apply_session_id_filter(event) -> None:
-    session_id = get_metrics(current_qc_path)['session_id']
-    plot_name_filter_dropdown.value = 'no filter'
-    qc_rating_filter_radio.value = 'all'
-    session_id_filter_dropdown.value = session_id
-    update_path_generator(event)
+    global toggle_generator
+    global qc_path_generator
+    if toggle_generator is None:
+        toggle_generator = toggle_session_id_filter_generator()
+        toggle_generator.send(None)
+        session_id = get_metrics(current_qc_path)['session_id']
+        qc_rating_filter_radio.value = 'all'
+        session_id_filter_dropdown.value = session_id
+        session_id_filter_dropdown.disabled = True
+        session_id_filter_button.button_type = "primary"
+        session_id_filter_button.name = "Restore previous view"
+        update_path_generator(event)
+    else:
+        # restore state of UI elements
+        original_plot_name, original_qc_rating = next(toggle_generator)
+        session_id_filter_dropdown.value = "no filter"
+        plot_name_filter_dropdown.value = original_plot_name
+        qc_rating_filter_radio.value = original_qc_rating
+        session_id_filter_dropdown.disabled = False
+        session_id_filter_button.button_type = "default"
+        session_id_filter_button.name = "Filter for current session"
+        toggle_generator = None
+        
     
-session_id_filter_button = pn.widgets.Button(
-    name="All plots for current session",
+session_id_filter_button = pn.widgets.Toggle(
+    name="Filter for current session",
     width=BUTTON_WIDTH,
 )
-session_id_filter_button.on_click(apply_session_id_filter)
+session_id_filter_button.param.watch(apply_session_id_filter, "value")
     
 def app():
     sidebar = pn.Column(
