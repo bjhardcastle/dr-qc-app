@@ -148,6 +148,7 @@ def get_db(
     extension_filter: str | None = '.png',
     session_id_filter: str | None = None,
     qc_rating_filter: int | None = None,
+    prod_only: bool = True,
     db_path=DB_PATH,
 ) -> pl.DataFrame:
     filter_exprs = []
@@ -180,7 +181,15 @@ def get_db(
         )
     if not filter_exprs:
         filter_exprs = [pl.lit(True)]
-    return pl.read_parquet(db_path).filter(*filter_exprs)
+    df = pl.read_parquet(db_path).filter(*filter_exprs)
+    if not prod_only:        
+        return df
+    # filter out non-prod sessions
+    return df.join(
+        other=get_session_df().filter(pl.col("keywords").list.contains("production")),
+        on="session_id",
+        how="semi",
+    )
 
 
 def qc_item_generator(
