@@ -368,9 +368,10 @@ qc_rating_filter_radio.param.watch(update_path_generator, "value")
 
 # button to apply current session ID to filter
 def apply_session_id_filter(event) -> None:
+    session_id = get_metrics(current_qc_path)['session_id']
     plot_name_filter_dropdown.value = 'no filter'
-    session_id_filter_dropdown.value = get_metrics(current_qc_path)
     qc_rating_filter_radio.value = 'all'
+    session_id_filter_dropdown.value = session_id
     update_path_generator(event)
     
 session_id_filter_button = pn.widgets.Button(
