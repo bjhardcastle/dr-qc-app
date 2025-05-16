@@ -1,4 +1,5 @@
 import datetime
+import io
 import json
 import logging
 import re
@@ -6,6 +7,7 @@ import time
 from typing import Generator, NotRequired, TypedDict
 
 
+import PIL.Image
 import altair as alt
 import npc_io
 import panel as pn
@@ -73,14 +75,48 @@ def display_rating(
         return pn.pane.Markdown(
             f"**{qc_db_utils.QCRating(rating).name.title()}** ({datetime.datetime.fromtimestamp(row['checked_timestamp']).strftime('%Y-%m-%d %H:%M:%S')})"
         )
+        
+def concatenate_pngs_vertically(png1_bytes: bytes, png2_bytes: bytes) -> bytes:
+    """Concatenates two PNG images vertically and returns the combined image as bytes."""
+    img1 = PIL.Image.open(io.BytesIO(png1_bytes))
+    img2 = PIL.Image.open(io.BytesIO(png2_bytes))
 
+    # Ensure both images are in RGB format
+    img1 = img1.convert("RGB")
+    img2 = img2.convert("RGB")
 
-def display_item(qc_path: str):
+    width1, height1 = img1.size
+    width2, height2 = img2.size
+    
+   # Scale img2 to the width of img1
+    if width2 != width1:
+        img2 = img2.resize((width1, int(height2 * (width1 / width2))), PIL.Image.Resampling.LANCZOS)
+        width2, height2 = img2.size  # Update dimensions after resizing
+
+    # Create a new image with the combined height and maximum width
+    new_img = PIL.Image.new("RGB", (width1, height1 + height2))
+
+    # Paste the images into the new image
+    new_img.paste(img1, (0, 0))
+    new_img.paste(img2, (0, height1))
+
+    # Save the combined image to bytes
+    output_buffer = io.BytesIO()
+    new_img.save(output_buffer, format="PNG")
+    return output_buffer.getvalue()
+
+def display_item(qc_path: str, second_image: str | None = None):
     path = upath.UPath(qc_path)
     logger.info(f"Displaying {path}")
     if path.suffix == '.png': 
+        if second_image:
+            image_bytes = concatenate_pngs_vertically(
+                path.read_bytes(), upath.UPath(second_image).read_bytes()
+            )
+        else:
+            image_bytes = path.read_bytes()
         return pn.pane.PNG(
-            path.read_bytes(),
+            image_bytes,
             sizing_mode="stretch_both",
         )
     if path.suffix == '.json':
@@ -131,10 +167,21 @@ def next_path(override_next_path: str | None = None) -> None:
         except StopIteration:
             pn.state.notifications.warning("No matching paths")
     global qc_item_pane
-    qc_item_pane.object = display_item(current_qc_path).object
+    
+    second_image = None        
+    if 'drift_maps' in current_qc_path:
+        running_df = (
+            db_df
+            .filter(
+                pl.col('session_id') == get_metrics(current_qc_path)["session_id"],
+                pl.col('plot_name') == 'running',
+            )
+        )
+        if len(running_df) > 0:
+            second_image = str(running_df['qc_path'].first())
+    qc_item_pane.object = display_item(current_qc_path, second_image=second_image).object
     metrics_pane.object = display_metrics(current_qc_path).object
     qc_rating_pane.object = display_rating(current_qc_path).object
-
 
 def update_and_next(path: str, qc_rating: int) -> None:
     qc_db_utils.set_qc_rating_for_path(path=path, qc_rating=qc_rating)
@@ -376,7 +423,7 @@ def toggle_session_id_filter_generator() -> Generator:
     # restore state of UI elements
     yield original_plot_name, original_qc_rating
 
-toggle_generator = None
+toggle_generator = None         
 def apply_session_id_filter(event) -> None:
     global toggle_generator
     global qc_path_generator
