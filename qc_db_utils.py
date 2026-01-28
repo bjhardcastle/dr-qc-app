@@ -17,7 +17,7 @@ QC_DIR = upath.UPath("//allen/programs/mindscope/workgroups/dynamicrouting/qc")
 DB_PATH = "//allen/programs/mindscope/workgroups/dynamicrouting/ben/qc_app.parquet"
 
 CACHED_DF_PATH = "s3://aind-scratch-data/dynamic-routing/cache/nwb_components/{}/consolidated/{}.parquet"
-CACHE_VERSION = "v0.0.265"
+CACHE_VERSION = "v0.0.274"
 
 
 @functools.cache
@@ -40,6 +40,9 @@ def generate_qc_df() -> pl.DataFrame:
         for p in QC_DIR.rglob("*")
         if not p.is_dir() and not p.name == "Thumbs.db"
     ]
+    if not paths[0].startswith('//') and paths[0].startswith('/'):
+        # in case we're on hpc
+        paths = [f"/{p}" for p in paths]
     path_list = pl.col("qc_path").str.split(".").list.get(0).str.split("/").list
     df = (
         pl.DataFrame({"qc_path": paths})
@@ -78,7 +81,8 @@ class QCRating(IntEnum):
 
 
 class Lock:
-    def __init__(self, path=DB_PATH + ".lock"):
+    """A simple file-based lock for cross-process synchronization."""
+    def __init__(self, path=DB_PATH.replace('.parquet', '.lock')):
         self.path = upath.UPath(path)
 
     def acquire(self):
@@ -116,19 +120,23 @@ def update_db(db_path: str = DB_PATH) -> None:
     upath.UPath(
         db_path + f".backup.{datetime.datetime.now():%Y%m%d_%H%M%S}"
     ).write_bytes(upath.UPath(db_path).read_bytes())
-    temp_path = db_path + ".temp"
     # get a brand new df with up-to-date paths
-    new_df = create_db(save_path=temp_path, overwrite=True).join(
-        other=(
-            (original_df := pl.read_parquet(db_path)).select(
-                "qc_rating", "checked_timestamp"
-            )
-        ),
-        on=["session_id", "qc_group", "plot_name", "plot_index"],
-        how="left",
+    temp_path = db_path + ".temp"
+    fresh_df = create_db(save_path=temp_path, overwrite=True)
+    updated_df = (
+        fresh_df
+        .drop("qc_rating", "checked_timestamp")
+        .join(
+            other=(
+                (original_df := pl.read_parquet(db_path).filter(pl.col("qc_rating").is_not_null()))
+            ),
+            on=["qc_path", "extension", "session_id", "qc_group", "plot_name", "plot_index"],
+            how="left",
+        )
     )
-    new_df.write_parquet(db_path)
-    logger.info(f"Updated {db_path}: {len(original_df)} -> {len(new_df)} rows")
+    assert original_df.filter(pl.col("qc_rating").is_not_null()).height == updated_df.filter(pl.col("qc_rating").is_not_null()).height, "Some QC ratings were lost during update"
+    updated_df.write_parquet(db_path)
+    logger.info(f"Updated {db_path}: {len(original_df)} -> {len(updated_df)} rows")
     upath.UPath(temp_path).unlink()
 
 
@@ -148,9 +156,12 @@ def get_db(
     extension_filter: str | None = '.png',
     session_id_filter: str | None = None,
     qc_rating_filter: int | None = None,
-    prod_only: bool = True,
+    naive_only: bool = False,
+    prod_only: bool = False,
     db_path=DB_PATH,
 ) -> pl.DataFrame:
+    if prod_only and naive_only:
+        raise ValueError("Cannot set both prod_only and naive_only to True")
     filter_exprs = []
     if path_filter:
         filter_exprs.append(pl.col("qc_path").str.contains(path_filter))
@@ -182,15 +193,21 @@ def get_db(
     if not filter_exprs:
         filter_exprs = [pl.lit(True)]
     df = pl.read_parquet(db_path).filter(*filter_exprs)
-    if not prod_only:        
+    if not (prod_only or naive_only):
         return df
-    # filter out non-prod sessions
-    return df.join(
-        other=get_session_df().filter(pl.col("keywords").list.contains("production")),
-        on="session_id",
-        how="semi",
-    )
-
+    if prod_only:
+        return df.join(
+            other=get_session_df().filter(pl.col("keywords").list.contains("production")),
+            on="session_id",
+            how="semi",
+        )
+    elif naive_only:
+        return df.join(
+            other=get_session_df().filter(pl.col("keywords").list.contains("context_naive"), ~pl.col('keywords').list.contains('templeton')),
+            on="session_id",
+            how="semi",
+        )
+    raise NotImplementedError("should not have reached this point here")
 
 def qc_item_generator(
     path_filter: str | None = None,
@@ -202,6 +219,7 @@ def qc_item_generator(
     extension_filter: str | None = '.png',
     session_id_filter: str | None = None,
     qc_rating_filter: int | None = None,
+    prod_only: bool = False,
     db_path=DB_PATH,
 ) -> Generator[str, None, None]:
     while True:
@@ -215,6 +233,7 @@ def qc_item_generator(
             extension_filter=extension_filter,
             session_id_filter=session_id_filter,
             qc_rating_filter=qc_rating_filter,
+            prod_only=prod_only,
             db_path=db_path,
         ).sort(pl.col("session_id").sort(descending=True), "qc_group", "plot_name", "plot_index")
         if len(df) == 0:

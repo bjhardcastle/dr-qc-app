@@ -30,8 +30,8 @@ BUTTON_WIDTH = int(SIDEBAR_WIDTH * 0.8)
 
 if not upath.UPath(qc_db_utils.DB_PATH).exists():
     qc_db_utils.create_db()
-
-db_df: pl.DataFrame = qc_db_utils.get_db()
+    
+db_df: pl.DataFrame = qc_db_utils.get_db(prod_only=True)
 
 def get_metrics(qc_path: str):
     return (
