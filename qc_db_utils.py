@@ -19,6 +19,56 @@ DB_PATH = "//allen/programs/mindscope/workgroups/dynamicrouting/ben/qc_app.parqu
 CACHED_DF_PATH = "s3://aind-scratch-data/dynamic-routing/cache/nwb_components/{}/consolidated/{}.parquet"
 CACHE_VERSION = "v0.0.274"
 
+naive_session_ids = [
+    "676909_2023-12-11",
+    "676909_2023-12-12",
+    "676909_2023-12-13",
+    "676909_2023-12-14",
+    "795555_2025-08-21",
+    "795555_2025-08-22",
+    "795555_2025-08-25",
+    "795555_2025-08-26",
+    "796012_2025-07-10",
+    "796012_2025-07-11",
+    "796012_2025-07-14",
+    "796012_2025-07-15",
+    "796847_2025-07-29",
+    "796847_2025-07-30",
+    "796847_2025-07-31",
+    "796847_2025-08-01",
+    "796848_2025-07-14",
+    "796848_2025-07-15", # sync stim alignment failing - no photodiode events on sync, no NIDAQ recorded on ephys -- unusable 
+    "796848_2025-07-16",
+    "796848_2025-07-17",
+    "798632_2025-08-29",
+    "798632_2025-09-02",
+    "798632_2025-09-03",
+    "798632_2025-09-04",
+    "807082_2025-09-29",
+    "807082_2025-09-30",
+    "807082_2025-10-01",
+    "807082_2025-10-02",
+    "810752_2025-10-07",
+    "810752_2025-10-08",
+    "810752_2025-10-09",
+    "810752_2025-10-10",
+    "814666_2025-11-06",
+    "814666_2025-11-07",
+    "814666_2025-11-10",
+    "814666_2025-11-11",
+    "814669_2025-11-10",
+    "814669_2025-11-11",
+    "814669_2025-11-12",
+    "814669_2025-11-13",
+    "831994_2025-12-15",
+    "831994_2025-12-16",
+    "831994_2025-12-17",
+    "831994_2025-12-18",
+    "834408_2025-12-17",
+    "834408_2025-12-18",
+    "834408_2025-12-19",
+    "834408_2025-12-22",
+]
 
 @functools.cache
 def get_session_df() -> pl.DataFrame:
@@ -106,12 +156,15 @@ class Lock:
 def create_db(
     save_path: str = DB_PATH,
     overwrite: bool = False,
+    naive_only: bool = False,
 ) -> pl.DataFrame:
     if upath.UPath(save_path).exists() and not overwrite:
         raise FileExistsError(
             f"{save_path} already exists: set overwrite=True to overwrite"
         )
     df = generate_qc_df()
+    if naive_only:
+        df = df.filter(pl.col('session_id').is_in(naive_session_ids))
     df.write_parquet(save_path)
     return df
 
@@ -160,8 +213,6 @@ def get_db(
     prod_only: bool = False,
     db_path=DB_PATH,
 ) -> pl.DataFrame:
-    if prod_only and naive_only:
-        raise ValueError("Cannot set both prod_only and naive_only to True")
     filter_exprs = []
     if path_filter:
         filter_exprs.append(pl.col("qc_path").str.contains(path_filter))
@@ -193,21 +244,15 @@ def get_db(
     if not filter_exprs:
         filter_exprs = [pl.lit(True)]
     df = pl.read_parquet(db_path).filter(*filter_exprs)
-    if not (prod_only or naive_only):
-        return df
     if prod_only:
-        return df.join(
+        df = df.join(
             other=get_session_df().filter(pl.col("keywords").list.contains("production")),
             on="session_id",
             how="semi",
         )
-    elif naive_only:
-        return df.join(
-            other=get_session_df().filter(pl.col("keywords").list.contains("context_naive"), ~pl.col('keywords').list.contains('templeton')),
-            on="session_id",
-            how="semi",
-        )
-    raise NotImplementedError("should not have reached this point here")
+    if naive_only:
+        df = df.filter(pl.col('session_id').is_in(naive_session_ids))
+    return df
 
 def qc_item_generator(
     path_filter: str | None = None,
