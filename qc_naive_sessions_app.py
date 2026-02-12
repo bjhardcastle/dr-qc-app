@@ -28,7 +28,7 @@ BUTTON_WIDTH = int(SIDEBAR_WIDTH * 0.8)
 
 NAIVE_DB_PATH = qc_db_utils.DB_PATH.replace("qc_app", "qc_naive_app")
 if not upath.UPath(NAIVE_DB_PATH).exists():
-    qc_db_utils.create_db(save_path=NAIVE_DB_PATH)
+    qc_db_utils.create_db(save_path=NAIVE_DB_PATH, naive_only=True)
 
 db_df: pl.DataFrame = qc_db_utils.get_db(naive_only=True, db_path=NAIVE_DB_PATH)
 
