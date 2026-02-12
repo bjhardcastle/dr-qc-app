@@ -30,7 +30,7 @@ NAIVE_DB_PATH = qc_db_utils.DB_PATH.replace("qc_app", "qc_naive_app")
 if not upath.UPath(NAIVE_DB_PATH).exists():
     qc_db_utils.create_db(save_path=NAIVE_DB_PATH, naive_only=True)
 
-db_df: pl.DataFrame = qc_db_utils.get_db(naive_only=True, db_path=NAIVE_DB_PATH)
+db_df: pl.DataFrame = qc_db_utils.get_db(extension_filter=None, naive_only=True, db_path=NAIVE_DB_PATH)
 
 
 def get_metrics(qc_path: str):
@@ -177,6 +177,7 @@ def next_path(override_next_path: str | None = None) -> None:
         running_df = db_df.filter(
             pl.col("session_id") == get_metrics(current_qc_path)["session_id"],
             pl.col("plot_name") == "running",
+            pl.col("extension") == ".png",
         )
         if len(running_df) > 0:
             second_image = str(running_df["qc_path"].first())
@@ -417,9 +418,11 @@ plot_name_filter_dropdown = pn.widgets.Select(
     name="Plot name",
     value="no filter",
     options=(
-        db_df.select(
+        db_df
+        .select(
             pl.concat_str(["qc_group", "plot_name"], separator="/").alias("name")
         )
+        .filter(pl.col('extension').eq('.png'))
         .get_column("name")
         .unique()
         .sort(descending=True)
@@ -432,7 +435,7 @@ plot_name_filter_dropdown.param.watch(update_path_generator, "value")
 session_id_filter_dropdown = pn.widgets.Select(
     name="Session ID",
     value="no filter",
-    options=db_df["session_id"].unique().sort(descending=False).to_list()
+    options=db_df.filter(pl.col('extension').eq('.png'))["session_id"].unique().sort(descending=False).to_list()
     + ["no filter"],
     width=BUTTON_WIDTH,
 )

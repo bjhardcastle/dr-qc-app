@@ -289,7 +289,7 @@ def qc_item_generator(
 
 def set_qc_rating_for_path(path: str, qc_rating: int, db_path=DB_PATH) -> None:
     timestamp = int(time.time())
-    original_df = get_db()
+    original_df = get_db(extension_filter=None, db_path=db_path)
     path_filter = pl.col("qc_path") == path
     logger.info(f"Updating row for {path} with qc_rating={qc_rating}")
     df = original_df.with_columns(
