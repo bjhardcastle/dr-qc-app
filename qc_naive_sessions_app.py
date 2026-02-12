@@ -338,6 +338,7 @@ chart = (
     alt.Chart(
         data=(
             db_df
+            .filter(pl.col('extension').is_in(['.png', '.error']))
             .with_columns(
                 pl.when(pl.col('extension').eq('.error')).then(pl.lit(9)).otherwise(pl.col('qc_rating')).alias('qc_rating')
             )
@@ -351,7 +352,7 @@ chart = (
             .with_columns(
                 pl.col("qc_rating")
                 .replace_strict(
-                    {0: "fail", 1: "pass", 5: "unsure", 9: "error"}, default="not rated"
+                    {0: "fail", 1: "pass", 5: "unsure", 9: "error"}, default="unrated"
                 )
                 .alias("rating"),
             )
@@ -366,7 +367,7 @@ chart = (
         xOffset=alt.XOffset("qc_rating:N"),
         y=alt.Y("count").scale(type="symlog"),
         color=alt.Color("rating:N").scale(
-            domain=["fail", "pass", "unsure", "not rated", "error"],
+            domain=["fail", "pass", "unsure", "unrated", "error"],
             range=["red", "green", "orange", "lightgrey", "pink"],
         ),
         tooltip=["plot_name", "qc_group", "rating", "count"],
@@ -419,10 +420,10 @@ plot_name_filter_dropdown = pn.widgets.Select(
     value="no filter",
     options=(
         db_df
+        .filter(pl.col('extension').eq('.png'))
         .select(
             pl.concat_str(["qc_group", "plot_name"], separator="/").alias("name")
         )
-        .filter(pl.col('extension').eq('.png'))
         .get_column("name")
         .unique()
         .sort(descending=True)
