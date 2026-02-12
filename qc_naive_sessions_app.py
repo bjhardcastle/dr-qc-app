@@ -336,7 +336,11 @@ shortcuts_component.on_msg(handle_shortcut)
 chart = (
     alt.Chart(
         data=(
-            db_df.group_by("plot_name", "qc_group")
+            db_df
+            .with_columns(
+                pl.when(pl.col('extension').eq('.error')).then(pl.lit(9)).otherwise(pl.col('qc_rating')).alias('qc_rating')
+            )
+            .group_by("plot_name", "qc_group")
             .agg(
                 pl.col("qc_rating").value_counts(),
             )
@@ -346,7 +350,7 @@ chart = (
             .with_columns(
                 pl.col("qc_rating")
                 .replace_strict(
-                    {0: "fail", 1: "pass", 5: "unsure"}, default="not rated"
+                    {0: "fail", 1: "pass", 5: "unsure", 9: "error"}, default="not rated"
                 )
                 .alias("rating"),
             )
@@ -361,8 +365,8 @@ chart = (
         xOffset=alt.XOffset("qc_rating:N"),
         y=alt.Y("count").scale(type="symlog"),
         color=alt.Color("rating:N").scale(
-            domain=["fail", "pass", "unsure", "not rated"],
-            range=["red", "green", "orange", "lightgrey"],
+            domain=["fail", "pass", "unsure", "not rated", "error"],
+            range=["red", "green", "orange", "lightgrey", "pink"],
         ),
         tooltip=["plot_name", "qc_group", "rating", "count"],
     )
