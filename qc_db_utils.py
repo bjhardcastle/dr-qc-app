@@ -169,25 +169,37 @@ def create_db(
     return df
 
 
-def update_db(db_path: str = DB_PATH) -> None:
-    upath.UPath(
-        db_path + f".backup.{datetime.datetime.now():%Y%m%d_%H%M%S}"
-    ).write_bytes(upath.UPath(db_path).read_bytes())
+def update_db(db_path: str = DB_PATH, naive_only: bool = False) -> None:
     # get a brand new df with up-to-date paths
     temp_path = db_path + ".temp"
-    fresh_df = create_db(save_path=temp_path, overwrite=True)
+    logger.info(f"Creating fresh df at {temp_path} for update...")
+    fresh_df = create_db(save_path=temp_path, overwrite=True, naive_only=naive_only)
     updated_df = (
         fresh_df
         .drop("qc_rating", "checked_timestamp")
         .join(
             other=(
-                (original_df := pl.read_parquet(db_path).filter(pl.col("qc_rating").is_not_null()))
+                (original_df := pl.read_parquet(db_path))
+                .filter(pl.col("qc_rating").is_not_null())
+                .select('qc_path', 'qc_rating', 'checked_timestamp')
             ),
-            on=["qc_path", "extension", "session_id", "qc_group", "plot_name", "plot_index"],
+            on="qc_path",
             how="left",
+            nulls_equal=True,
+        )
+        .filter(
+            (pl.col('session_id').is_in(naive_session_ids) if naive_only else pl.lit(True)),
         )
     )
-    assert original_df.filter(pl.col("qc_rating").is_not_null()).height == updated_df.filter(pl.col("qc_rating").is_not_null()).height, "Some QC ratings were lost during update"
+    if (
+        (original := original_df.filter(pl.col("qc_rating").is_not_null()).height) 
+        != (updated := updated_df.filter(pl.col("qc_rating").is_not_null()).height)
+    ):
+        logger.warning(f"Some QC ratings were lost during attempted db update: {original} -> {updated}. Update aborted (try debugging join with {temp_path}).")
+        return None
+    upath.UPath(
+        db_path + f".backup.{datetime.datetime.now():%Y%m%d_%H%M%S}"
+    ).write_bytes(upath.UPath(db_path).read_bytes())
     updated_df.write_parquet(db_path)
     logger.info(f"Updated {db_path}: {len(original_df)} -> {len(updated_df)} rows")
     upath.UPath(temp_path).unlink()
