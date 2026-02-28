@@ -1,7 +1,6 @@
 import datetime
 import functools
 import logging
-import random
 import time
 from enum import IntEnum
 from typing import Generator
@@ -37,7 +36,7 @@ naive_session_ids = [
     "796847_2025-07-31",
     "796847_2025-08-01",
     "796848_2025-07-14",
-    "796848_2025-07-15", # sync stim alignment failing - no photodiode events on sync, no NIDAQ recorded on ephys -- unusable 
+    # "796848_2025-07-15",  # sync stim alignment failing - no photodiode events on sync, no NIDAQ recorded on ephys -- unusable
     "796848_2025-07-16",
     "796848_2025-07-17",
     "798632_2025-08-29",
@@ -68,7 +67,14 @@ naive_session_ids = [
     "834408_2025-12-18",
     "834408_2025-12-19",
     "834408_2025-12-22",
+    "836729_2026-02-16",
+    "836729_2026-02-17",
+    "836729_2026-02-18",
+    "836726_2026-02-11",
+    "836726_2026-02-12",
+    "836726_2026-02-13",
 ]
+
 
 @functools.cache
 def get_session_df() -> pl.DataFrame:
@@ -90,7 +96,7 @@ def generate_qc_df() -> pl.DataFrame:
         for p in QC_DIR.rglob("*")
         if not p.is_dir() and not p.name == "Thumbs.db"
     ]
-    if not paths[0].startswith('//') and paths[0].startswith('/'):
+    if not paths[0].startswith("//") and paths[0].startswith("/"):
         # in case we're on hpc
         paths = [f"/{p}" for p in paths]
     path_list = pl.col("qc_path").str.split(".").list.get(0).str.split("/").list
@@ -132,7 +138,8 @@ class QCRating(IntEnum):
 
 class Lock:
     """A simple file-based lock for cross-process synchronization."""
-    def __init__(self, path=DB_PATH.replace('.parquet', '.lock')):
+
+    def __init__(self, path=DB_PATH.replace(".parquet", ".lock")):
         self.path = upath.UPath(path)
 
     def acquire(self):
@@ -164,7 +171,7 @@ def create_db(
         )
     df = generate_qc_df()
     if naive_only:
-        df = df.filter(pl.col('session_id').is_in(naive_session_ids))
+        df = df.filter(pl.col("session_id").is_in(naive_session_ids))
     df.write_parquet(save_path)
     return df
 
@@ -175,27 +182,31 @@ def update_db(db_path: str = DB_PATH, naive_only: bool = False) -> None:
     logger.info(f"Creating fresh df at {temp_path} for update...")
     fresh_df = create_db(save_path=temp_path, overwrite=True, naive_only=naive_only)
     updated_df = (
-        fresh_df
-        .drop("qc_rating", "checked_timestamp")
+        fresh_df.drop("qc_rating", "checked_timestamp")
         .join(
             other=(
                 (original_df := pl.read_parquet(db_path))
                 .filter(pl.col("qc_rating").is_not_null())
-                .select('qc_path', 'qc_rating', 'checked_timestamp')
+                .select("qc_path", "qc_rating", "checked_timestamp")
             ),
             on="qc_path",
             how="left",
             nulls_equal=True,
         )
         .filter(
-            (pl.col('session_id').is_in(naive_session_ids) if naive_only else pl.lit(True)),
+            (
+                pl.col("session_id").is_in(naive_session_ids)
+                if naive_only
+                else pl.lit(True)
+            ),
         )
     )
-    if (
-        (original := original_df.filter(pl.col("qc_rating").is_not_null()).height) 
-        != (updated := updated_df.filter(pl.col("qc_rating").is_not_null()).height)
+    if (original := original_df.filter(pl.col("qc_rating").is_not_null()).height) != (
+        updated := updated_df.filter(pl.col("qc_rating").is_not_null()).height
     ):
-        logger.warning(f"Some QC ratings were lost during attempted db update: {original} -> {updated}. Update aborted (try debugging join with {temp_path}).")
+        logger.warning(
+            f"Some QC ratings were lost during attempted db update: {original} -> {updated}. Update aborted (try debugging join with {temp_path})."
+        )
         return None
     upath.UPath(
         db_path + f".backup.{datetime.datetime.now():%Y%m%d_%H%M%S}"
@@ -218,7 +229,7 @@ def get_db(
     qc_group_filter: str | None = None,
     plot_name_filter: str | None = None,
     plot_index_filter: int | None = None,
-    extension_filter: str | None = '.png',
+    extension_filter: str | list[str] | None = ".png",
     session_id_filter: str | None = None,
     qc_rating_filter: int | None = None,
     naive_only: bool = False,
@@ -229,8 +240,10 @@ def get_db(
     if path_filter:
         filter_exprs.append(pl.col("qc_path").str.contains(path_filter))
     if probe_filter:
-        probe_letter = probe_filter.lower().replace('probe', '').replace('_', '').upper()
-        if probe_letter not in 'ABCDEF':
+        probe_letter = (
+            probe_filter.lower().replace("probe", "").replace("_", "").upper()
+        )
+        if probe_letter not in "ABCDEF":
             raise ValueError(f"Invalid probe filter: {probe_filter}")
         filter_exprs.append(pl.col("qc_path").str.contains(f"probe{probe_letter}"))
     if already_checked is True and qc_rating_filter is None:
@@ -246,7 +259,10 @@ def get_db(
     if plot_index_filter is not None:
         filter_exprs.append(pl.col("plot_index") == plot_index_filter)
     if extension_filter:
-        filter_exprs.append(pl.col("extension") == extension_filter)
+        if isinstance(extension_filter, list):
+            filter_exprs.append(pl.col("extension").is_in(extension_filter))
+        else:
+            filter_exprs.append(pl.col("extension") == extension_filter)
     if qc_rating_filter is not None:
         filter_exprs.append(pl.col("qc_rating") == int(qc_rating_filter))
     if filter_exprs:
@@ -258,13 +274,16 @@ def get_db(
     df = pl.read_parquet(db_path).filter(*filter_exprs)
     if prod_only:
         df = df.join(
-            other=get_session_df().filter(pl.col("keywords").list.contains("production")),
+            other=get_session_df().filter(
+                pl.col("keywords").list.contains("production")
+            ),
             on="session_id",
             how="semi",
         )
     if naive_only:
-        df = df.filter(pl.col('session_id').is_in(naive_session_ids))
+        df = df.filter(pl.col("session_id").is_in(naive_session_ids))
     return df
+
 
 def qc_item_generator(
     path_filter: str | None = None,
@@ -273,7 +292,7 @@ def qc_item_generator(
     qc_group_filter: str | None = None,
     plot_name_filter: str | None = None,
     plot_index_filter: int | None = None,
-    extension_filter: str | None = '.png',
+    extension_filter: str | list[str] | None = ".png",
     session_id_filter: str | None = None,
     qc_rating_filter: int | None = None,
     prod_only: bool = False,
@@ -292,9 +311,16 @@ def qc_item_generator(
             qc_rating_filter=qc_rating_filter,
             prod_only=prod_only,
             db_path=db_path,
-        ).sort(pl.col("session_id").sort(descending=True), "qc_group", "plot_name", "plot_index")
+        ).sort(
+            pl.col("session_id").sort(descending=True),
+            "qc_group",
+            "plot_name",
+            "plot_index",
+        )
         if len(df) == 0:
-            raise StopIteration(f"No QC items to check matching filter: {path_filter=}, {already_checked=}, {qc_group_filter=}, {plot_name_filter=}, {plot_index_filter=}, {extension_filter=}, {session_id_filter=}, {qc_rating_filter=}")
+            raise StopIteration(
+                f"No QC items to check matching filter: {path_filter=}, {already_checked=}, {qc_group_filter=}, {plot_name_filter=}, {plot_index_filter=}, {extension_filter=}, {session_id_filter=}, {qc_rating_filter=}"
+            )
         for row in df.iter_rows(named=True):
             yield str(row["qc_path"])  # cast to str for mypy
 
